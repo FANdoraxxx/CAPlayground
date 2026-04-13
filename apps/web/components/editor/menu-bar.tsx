@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Pencil, Trash2, Sun, Moon, Keyboard, PanelLeft, PanelRight, Settings as Gear, ArrowUpDown, Layers as LayersIcon, Check, X, MoreVertical, Eye, EyeOff, Undo2, Redo2 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Sun, Moon, Keyboard, PanelLeft, PanelRight, Settings as Gear, ArrowUpDown, Layers as LayersIcon, Check, X, MoreVertical, Eye, EyeOff, Undo2, Redo2, Maximize } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEditor } from "./editor-context";
+import type { ProjectDocument } from "./editor-context";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { getProject, updateProject, deleteProject, isUsingOPFS } from "@/lib/storage";
 import { SettingsPanel } from "./settings-panel";
 import { ExportDialog } from "./ExportDialog";
+import { scaleLayersRecursive } from "@/lib/editor/layer-utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 
 interface ProjectMeta { id: string; name: string; width?: number; height?: number; createdAt?: string }
@@ -50,6 +53,10 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [resizeOpen, setResizeOpen] = useState(false);
+  const [resizeWidth, setResizeWidth] = useState("");
+  const [resizeHeight, setResizeHeight] = useState("");
+  const [scaleAllLayers, setScaleAllLayers] = useState(true);
   const [name, setName] = useState("");
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -149,6 +156,59 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
     router.push("/projects");
   };
 
+  const openResizeDialog = () => {
+    if (doc) {
+      setResizeWidth(String(doc.meta.width || 390));
+      setResizeHeight(String(doc.meta.height || 844));
+      setScaleAllLayers(true);
+    }
+    setResizeOpen(true);
+  };
+
+  const performResize = async () => {
+    const newW = Math.round(Number(resizeWidth));
+    const newH = Math.round(Number(resizeHeight));
+    if (!newW || !newH || newW <= 0 || newH <= 0) return;
+
+    // Update storage
+    const proj = await getProject(projectId);
+    if (proj) await updateProject({ ...proj, width: newW, height: newH });
+
+    setDoc((prev) => {
+      if (!prev) return prev;
+      const oldW = prev.meta.width || 390;
+      const oldH = prev.meta.height || 844;
+      const scaleX = newW / oldW;
+      const scaleY = newH / oldH;
+
+      let nextDocs = prev.docs;
+      if (scaleAllLayers) {
+        nextDocs = {
+          background: {
+            ...prev.docs.background,
+            layers: scaleLayersRecursive(prev.docs.background.layers, scaleX, scaleY),
+          },
+          floating: {
+            ...prev.docs.floating,
+            layers: scaleLayersRecursive(prev.docs.floating.layers, scaleX, scaleY),
+          },
+          wallpaper: {
+            ...prev.docs.wallpaper,
+            layers: scaleLayersRecursive(prev.docs.wallpaper.layers, scaleX, scaleY),
+          },
+        };
+      }
+
+      return {
+        ...prev,
+        meta: { ...prev.meta, width: newW, height: newH },
+        docs: nextDocs,
+      } as ProjectDocument;
+    });
+
+    setResizeOpen(false);
+  };
+
   return (
     <div className="w-full h-12 flex items-center justify-between px-3 border-b bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center gap-2">
@@ -169,6 +229,9 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
               </DropdownMenuItem>
               <DropdownMenuItem className="cursor-pointer" onClick={() => setRenameOpen(true)}>
                 <Pencil className="h-4 w-4 mr-2" /> Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={openResizeDialog}>
+                <Maximize className="h-4 w-4 mr-2" /> Resize Project
               </DropdownMenuItem>
               <DropdownMenuItem className="text-destructive cursor-pointer" onClick={() => setDeleteOpen(true)}>
                 <Trash2 className="h-4 w-4 mr-2" /> Delete
@@ -484,6 +547,66 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Resize project dialog */}
+      <Dialog open={resizeOpen} onOpenChange={setResizeOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Resize Project</DialogTitle>
+            <DialogDescription>Change the canvas dimensions of your project.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="resize-width">Width</Label>
+                <Input
+                  id="resize-width"
+                  type="number"
+                  min={1}
+                  value={resizeWidth}
+                  onChange={(e) => setResizeWidth(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') performResize(); }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="resize-height">Height</Label>
+                <Input
+                  id="resize-height"
+                  type="number"
+                  min={1}
+                  value={resizeHeight}
+                  onChange={(e) => setResizeHeight(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') performResize(); }}
+                />
+              </div>
+            </div>
+            {doc && (
+              <p className="text-xs text-muted-foreground">
+                Current: {doc.meta.width} × {doc.meta.height}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="scale-layers"
+                checked={scaleAllLayers}
+                onCheckedChange={(v) => setScaleAllLayers(v === true)}
+              />
+              <Label htmlFor="scale-layers" className="text-sm font-normal cursor-pointer">
+                Scale all layers proportionally
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResizeOpen(false)}>Cancel</Button>
+            <Button
+              onClick={performResize}
+              disabled={!resizeWidth || !resizeHeight || Number(resizeWidth) <= 0 || Number(resizeHeight) <= 0}
+            >
+              Resize
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Settings panel */}
       <SettingsPanel

@@ -1,4 +1,4 @@
-import type { AnyLayer, GradientLayer } from "@/lib/ca/types";
+import type { AnyLayer, GradientLayer, TextLayer } from "@/lib/ca/types";
 import { clamp } from "../utils";
 
 export const genId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -292,3 +292,48 @@ export const hasLayerAnimations = (layer: AnyLayer): boolean => {
   if (animations.length > 0) return true;
   return (layer.children ?? []).some((child) => hasLayerAnimations(child));
 };
+
+/**
+ * Recursively scale all layers by a given factor.
+ * Scales position, size, and fontSize (for text layers) proportionally.
+ */
+export function scaleLayersRecursive(layers: AnyLayer[], scaleX: number, scaleY: number): AnyLayer[] {
+  return layers.map((layer) => {
+    const scaled: AnyLayer = {
+      ...layer,
+      position: {
+        x: (layer.position?.x ?? 0) * scaleX,
+        y: (layer.position?.y ?? 0) * scaleY,
+      },
+      size: {
+        w: (layer.size?.w ?? 0) * scaleX,
+        h: (layer.size?.h ?? 0) * scaleY,
+      },
+    };
+
+    // Scale fontSize for text layers
+    if (scaled.type === 'text' && scaled.fontSize) {
+      const uniformScale = Math.min(scaleX, scaleY);
+      (scaled as TextLayer).fontSize = scaled.fontSize * uniformScale;
+    }
+
+    // Scale borderWidth if present
+    if (scaled.borderWidth) {
+      const uniformScale = Math.min(scaleX, scaleY);
+      scaled.borderWidth = scaled.borderWidth * uniformScale;
+    }
+
+    // Scale cornerRadius if present
+    if (scaled.cornerRadius) {
+      const uniformScale = Math.min(scaleX, scaleY);
+      scaled.cornerRadius = scaled.cornerRadius * uniformScale;
+    }
+
+    // Recursively scale children
+    if (layer.children?.length) {
+      (scaled as any).children = scaleLayersRecursive(layer.children, scaleX, scaleY);
+    }
+
+    return scaled;
+  });
+}
