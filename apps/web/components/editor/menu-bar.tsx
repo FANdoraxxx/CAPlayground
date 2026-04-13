@@ -259,14 +259,17 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
           background: {
             ...prev.docs.background,
             layers: offsetLayersRecursive(prev.docs.background.layers, dx, dy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.background.stateOverrides, dx, dy),
           },
           floating: {
             ...prev.docs.floating,
             layers: offsetLayersRecursive(prev.docs.floating.layers, dx, dy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.floating.stateOverrides, dx, dy),
           },
           wallpaper: {
             ...prev.docs.wallpaper,
             layers: offsetLayersRecursive(prev.docs.wallpaper.layers, dx, dy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.wallpaper.stateOverrides, dx, dy),
           },
         },
       } as ProjectDocument;
