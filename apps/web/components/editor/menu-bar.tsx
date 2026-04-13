@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Pencil, Trash2, Sun, Moon, Keyboard, PanelLeft, PanelRight, Settings as Gear, ArrowUpDown, Layers as LayersIcon, Check, X, MoreVertical, Eye, EyeOff, Undo2, Redo2 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Sun, Moon, Keyboard, PanelLeft, PanelRight, Settings as Gear, ArrowUpDown, Layers as LayersIcon, Check, X, MoreVertical, Eye, EyeOff, Undo2, Redo2, Maximize, Move } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEditor } from "./editor-context";
+import type { ProjectDocument } from "./editor-context";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { getProject, updateProject, deleteProject, isUsingOPFS } from "@/lib/storage";
 import { SettingsPanel } from "./settings-panel";
 import { ExportDialog } from "./ExportDialog";
+import { scaleLayersRecursive, offsetLayersRecursive, scaleStateOverridesPosition, offsetStateOverridesPosition } from "@/lib/editor/layer-utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 
 interface ProjectMeta { id: string; name: string; width?: number; height?: number; createdAt?: string }
@@ -50,6 +53,13 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [resizeOpen, setResizeOpen] = useState(false);
+  const [resizeWidth, setResizeWidth] = useState("");
+  const [resizeHeight, setResizeHeight] = useState("");
+  const [scaleAllLayers, setScaleAllLayers] = useState(true);
+  const [offsetOpen, setOffsetOpen] = useState(false);
+  const [offsetX, setOffsetX] = useState("0");
+  const [offsetY, setOffsetY] = useState("0");
   const [name, setName] = useState("");
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -149,6 +159,125 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
     router.push("/projects");
   };
 
+  const openResizeDialog = () => {
+    if (doc) {
+      setResizeWidth(String(doc.meta.width || 390));
+      setResizeHeight(String(doc.meta.height || 844));
+      setScaleAllLayers(true);
+    }
+    setResizeOpen(true);
+  };
+
+  const performResize = async () => {
+    const newW = Math.round(Number(resizeWidth));
+    const newH = Math.round(Number(resizeHeight));
+    if (!Number.isFinite(newW) || !Number.isFinite(newH) || newW <= 0 || newH <= 0) return;
+
+    // Update storage
+    const proj = await getProject(projectId);
+    if (!proj) return;
+    await updateProject({ ...proj, width: newW, height: newH });
+
+    setDoc((prev) => {
+      if (!prev) return prev;
+      const oldW = prev.meta.width || 390;
+      const oldH = prev.meta.height || 844;
+      const scaleX = newW / oldW;
+      const scaleY = newH / oldH;
+      // Half-dimension delta used to keep the canvas center point stable when not scaling.
+      const cx = (newW - oldW) / 2;
+      const cy = (newH - oldH) / 2;
+
+      let nextDocs = prev.docs;
+      if (scaleAllLayers) {
+        // Scale base-layer positions/sizes AND per-state position overrides.
+        nextDocs = {
+          background: {
+            ...prev.docs.background,
+            layers: scaleLayersRecursive(prev.docs.background.layers, scaleX, scaleY),
+            stateOverrides: scaleStateOverridesPosition(prev.docs.background.stateOverrides, scaleX, scaleY),
+          },
+          floating: {
+            ...prev.docs.floating,
+            layers: scaleLayersRecursive(prev.docs.floating.layers, scaleX, scaleY),
+            stateOverrides: scaleStateOverridesPosition(prev.docs.floating.stateOverrides, scaleX, scaleY),
+          },
+          wallpaper: {
+            ...prev.docs.wallpaper,
+            layers: scaleLayersRecursive(prev.docs.wallpaper.layers, scaleX, scaleY),
+            stateOverrides: scaleStateOverridesPosition(prev.docs.wallpaper.stateOverrides, scaleX, scaleY),
+          },
+        };
+      } else if (cx !== 0 || cy !== 0) {
+        // No scaling: shift every layer and per-state override by half the size delta
+        // so that the canvas center stays visually fixed across all states.
+        nextDocs = {
+          background: {
+            ...prev.docs.background,
+            layers: offsetLayersRecursive(prev.docs.background.layers, cx, cy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.background.stateOverrides, cx, cy),
+          },
+          floating: {
+            ...prev.docs.floating,
+            layers: offsetLayersRecursive(prev.docs.floating.layers, cx, cy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.floating.stateOverrides, cx, cy),
+          },
+          wallpaper: {
+            ...prev.docs.wallpaper,
+            layers: offsetLayersRecursive(prev.docs.wallpaper.layers, cx, cy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.wallpaper.stateOverrides, cx, cy),
+          },
+        };
+      }
+
+      return {
+        ...prev,
+        meta: { ...prev.meta, width: newW, height: newH },
+        docs: nextDocs,
+      } as ProjectDocument;
+    });
+
+    setResizeOpen(false);
+  };
+
+  const openOffsetDialog = () => {
+    setOffsetX("0");
+    setOffsetY("0");
+    setOffsetOpen(true);
+  };
+
+  const performOffset = () => {
+    const dx = Number(offsetX);
+    const dy = Number(offsetY);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
+
+    setDoc((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        docs: {
+          background: {
+            ...prev.docs.background,
+            layers: offsetLayersRecursive(prev.docs.background.layers, dx, dy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.background.stateOverrides, dx, dy),
+          },
+          floating: {
+            ...prev.docs.floating,
+            layers: offsetLayersRecursive(prev.docs.floating.layers, dx, dy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.floating.stateOverrides, dx, dy),
+          },
+          wallpaper: {
+            ...prev.docs.wallpaper,
+            layers: offsetLayersRecursive(prev.docs.wallpaper.layers, dx, dy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.wallpaper.stateOverrides, dx, dy),
+          },
+        },
+      } as ProjectDocument;
+    });
+
+    setOffsetOpen(false);
+  };
+
   return (
     <div className="w-full h-12 flex items-center justify-between px-3 border-b bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center gap-2">
@@ -169,6 +298,12 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
               </DropdownMenuItem>
               <DropdownMenuItem className="cursor-pointer" onClick={() => setRenameOpen(true)}>
                 <Pencil className="h-4 w-4 mr-2" /> Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={openResizeDialog}>
+                <Maximize className="h-4 w-4 mr-2" /> Resize Project
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={openOffsetDialog}>
+                <Move className="h-4 w-4 mr-2" /> Offset All Layers
               </DropdownMenuItem>
               <DropdownMenuItem className="text-destructive cursor-pointer" onClick={() => setDeleteOpen(true)}>
                 <Trash2 className="h-4 w-4 mr-2" /> Delete
@@ -484,6 +619,114 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Resize project dialog */}
+      <Dialog open={resizeOpen} onOpenChange={setResizeOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Resize Project</DialogTitle>
+            <DialogDescription>Change the canvas dimensions of your project.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="resize-width">Width</Label>
+                <Input
+                  id="resize-width"
+                  type="number"
+                  min={1}
+                  value={resizeWidth}
+                  onChange={(e) => setResizeWidth(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') performResize(); }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="resize-height">Height</Label>
+                <Input
+                  id="resize-height"
+                  type="number"
+                  min={1}
+                  value={resizeHeight}
+                  onChange={(e) => setResizeHeight(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') performResize(); }}
+                />
+              </div>
+            </div>
+            {doc && (
+              <p className="text-xs text-muted-foreground">
+                Current: {doc.meta.width} × {doc.meta.height}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="scale-layers"
+                checked={scaleAllLayers}
+                onCheckedChange={(v) => setScaleAllLayers(v === true)}
+              />
+              <Label htmlFor="scale-layers" className="text-sm font-normal cursor-pointer">
+                Scale all layers proportionally
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResizeOpen(false)}>Cancel</Button>
+            <Button
+              onClick={performResize}
+              disabled={!resizeWidth || !resizeHeight || Number(resizeWidth) <= 0 || Number(resizeHeight) <= 0}
+            >
+              Resize
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Offset all layers dialog */}
+      <Dialog open={offsetOpen} onOpenChange={setOffsetOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Offset All Layers</DialogTitle>
+            <DialogDescription>
+              Add a fixed offset to every layer&apos;s position across all views.
+              Positive X moves right, positive Y moves down.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="offset-x">X Offset</Label>
+              <Input
+                id="offset-x"
+                type="number"
+                value={offsetX}
+                onChange={(e) => setOffsetX(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') performOffset(); }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="offset-y">Y Offset</Label>
+              <Input
+                id="offset-y"
+                type="number"
+                value={offsetY}
+                onChange={(e) => setOffsetY(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') performOffset(); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOffsetOpen(false)}>Cancel</Button>
+            <Button
+              onClick={performOffset}
+              disabled={
+                !Number.isFinite(Number(offsetX)) ||
+                !Number.isFinite(Number(offsetY)) ||
+                (Number(offsetX) === 0 && Number(offsetY) === 0)
+              }
+            >
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Settings panel */}
       <SettingsPanel

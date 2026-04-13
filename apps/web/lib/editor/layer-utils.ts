@@ -1,4 +1,4 @@
-import type { AnyLayer, GradientLayer } from "@/lib/ca/types";
+import type { AnyLayer, GradientLayer, TextLayer } from "@/lib/ca/types";
 import { clamp } from "../utils";
 
 export const genId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -292,3 +292,111 @@ export const hasLayerAnimations = (layer: AnyLayer): boolean => {
   if (animations.length > 0) return true;
   return (layer.children ?? []).some((child) => hasLayerAnimations(child));
 };
+
+type StateOverridesMap = Record<string, Array<{ targetId: string; keyPath: string; value: string | number }>>;
+
+/**
+ * Scale all position.x / position.y entries inside a stateOverrides map.
+ * Used when resizing a canvas with "scale all layers" enabled, so that per-state
+ * position overrides (Locked, Unlock, Sleep, …) stay consistent with the scaled
+ * base-layer positions.
+ */
+export function scaleStateOverridesPosition(
+  stateOverrides: StateOverridesMap | undefined,
+  scaleX: number,
+  scaleY: number,
+): StateOverridesMap {
+  if (!stateOverrides) return {};
+  const result: StateOverridesMap = {};
+  for (const [state, overrides] of Object.entries(stateOverrides)) {
+    result[state] = overrides.map((ov) => {
+      if (ov.keyPath === 'position.x') return { ...ov, value: Number(ov.value) * scaleX };
+      if (ov.keyPath === 'position.y') return { ...ov, value: Number(ov.value) * scaleY };
+      return ov;
+    });
+  }
+  return result;
+}
+
+/**
+ * Add a fixed delta to all position.x / position.y entries inside a stateOverrides map.
+ * Used when resizing a canvas without scaling, to keep every state's content centred on
+ * the new canvas (offset = (newW - oldW) / 2, (newH - oldH) / 2).
+ */
+export function offsetStateOverridesPosition(
+  stateOverrides: StateOverridesMap | undefined,
+  dx: number,
+  dy: number,
+): StateOverridesMap {
+  if (!stateOverrides) return {};
+  const result: StateOverridesMap = {};
+  for (const [state, overrides] of Object.entries(stateOverrides)) {
+    result[state] = overrides.map((ov) => {
+      if (ov.keyPath === 'position.x') return { ...ov, value: Number(ov.value) + dx };
+      if (ov.keyPath === 'position.y') return { ...ov, value: Number(ov.value) + dy };
+      return ov;
+    });
+  }
+  return result;
+}
+
+/**
+ * Recursively offset the position of all layers by a fixed delta.
+ * Applies dx/dy to every layer's position, including nested children.
+ */
+export function offsetLayersRecursive(layers: AnyLayer[], dx: number, dy: number): AnyLayer[] {
+  return layers.map((layer) => {
+    const moved: AnyLayer = {
+      ...layer,
+      position: {
+        x: (layer.position?.x ?? 0) + dx,
+        y: (layer.position?.y ?? 0) + dy,
+      },
+    };
+
+    if (layer.children?.length) {
+      (moved as AnyLayer & { children: AnyLayer[] }).children = offsetLayersRecursive(layer.children, dx, dy);
+    }
+
+    return moved;
+  });
+}
+
+/**
+ * Recursively scale all layers by a given factor.
+ * Scales position, size, and fontSize (for text layers) proportionally.
+ */
+export function scaleLayersRecursive(layers: AnyLayer[], scaleX: number, scaleY: number): AnyLayer[] {
+  const uniformScale = Math.min(scaleX, scaleY);
+  return layers.map((layer) => {
+    const scaled: AnyLayer = {
+      ...layer,
+      position: {
+        x: (layer.position?.x ?? 0) * scaleX,
+        y: (layer.position?.y ?? 0) * scaleY,
+      },
+      size: {
+        w: (layer.size?.w ?? 0) * scaleX,
+        h: (layer.size?.h ?? 0) * scaleY,
+      },
+    };
+
+    if (scaled.type === 'text' && scaled.fontSize) {
+      (scaled as TextLayer).fontSize = scaled.fontSize * uniformScale;
+    }
+
+    if (scaled.borderWidth) {
+      scaled.borderWidth = scaled.borderWidth * uniformScale;
+    }
+
+    if (scaled.cornerRadius) {
+      scaled.cornerRadius = scaled.cornerRadius * uniformScale;
+    }
+
+    if (layer.children?.length) {
+      (scaled as AnyLayer & { children: AnyLayer[] }).children = scaleLayersRecursive(layer.children, scaleX, scaleY);
+    }
+
+    return scaled;
+  });
+}
