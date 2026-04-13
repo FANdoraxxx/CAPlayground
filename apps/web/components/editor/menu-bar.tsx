@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Pencil, Trash2, Sun, Moon, Keyboard, PanelLeft, PanelRight, Settings as Gear, ArrowUpDown, Layers as LayersIcon, Check, X, MoreVertical, Eye, EyeOff, Undo2, Redo2, Maximize } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, Sun, Moon, Keyboard, PanelLeft, PanelRight, Settings as Gear, ArrowUpDown, Layers as LayersIcon, Check, X, MoreVertical, Eye, EyeOff, Undo2, Redo2, Maximize, Move } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEditor } from "./editor-context";
 import type { ProjectDocument } from "./editor-context";
@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { getProject, updateProject, deleteProject, isUsingOPFS } from "@/lib/storage";
 import { SettingsPanel } from "./settings-panel";
 import { ExportDialog } from "./ExportDialog";
-import { scaleLayersRecursive } from "@/lib/editor/layer-utils";
+import { scaleLayersRecursive, offsetLayersRecursive } from "@/lib/editor/layer-utils";
 import { Checkbox } from "@/components/ui/checkbox";
 
 
@@ -57,6 +57,9 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
   const [resizeWidth, setResizeWidth] = useState("");
   const [resizeHeight, setResizeHeight] = useState("");
   const [scaleAllLayers, setScaleAllLayers] = useState(true);
+  const [offsetOpen, setOffsetOpen] = useState(false);
+  const [offsetX, setOffsetX] = useState("0");
+  const [offsetY, setOffsetY] = useState("0");
   const [name, setName] = useState("");
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -210,6 +213,42 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
     setResizeOpen(false);
   };
 
+  const openOffsetDialog = () => {
+    setOffsetX("0");
+    setOffsetY("0");
+    setOffsetOpen(true);
+  };
+
+  const performOffset = () => {
+    const dx = Number(offsetX);
+    const dy = Number(offsetY);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    if (dx === 0 && dy === 0) { setOffsetOpen(false); return; }
+
+    setDoc((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        docs: {
+          background: {
+            ...prev.docs.background,
+            layers: offsetLayersRecursive(prev.docs.background.layers, dx, dy),
+          },
+          floating: {
+            ...prev.docs.floating,
+            layers: offsetLayersRecursive(prev.docs.floating.layers, dx, dy),
+          },
+          wallpaper: {
+            ...prev.docs.wallpaper,
+            layers: offsetLayersRecursive(prev.docs.wallpaper.layers, dx, dy),
+          },
+        },
+      } as ProjectDocument;
+    });
+
+    setOffsetOpen(false);
+  };
+
   return (
     <div className="w-full h-12 flex items-center justify-between px-3 border-b bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center gap-2">
@@ -233,6 +272,9 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
               </DropdownMenuItem>
               <DropdownMenuItem className="cursor-pointer" onClick={openResizeDialog}>
                 <Maximize className="h-4 w-4 mr-2" /> Resize Project
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={openOffsetDialog}>
+                <Move className="h-4 w-4 mr-2" /> Offset All Layers
               </DropdownMenuItem>
               <DropdownMenuItem className="text-destructive cursor-pointer" onClick={() => setDeleteOpen(true)}>
                 <Trash2 className="h-4 w-4 mr-2" /> Delete
@@ -604,6 +646,54 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
               disabled={!resizeWidth || !resizeHeight || Number(resizeWidth) <= 0 || Number(resizeHeight) <= 0}
             >
               Resize
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Offset all layers dialog */}
+      <Dialog open={offsetOpen} onOpenChange={setOffsetOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Offset All Layers</DialogTitle>
+            <DialogDescription>
+              Add a fixed offset to every layer&apos;s position across all views.
+              Positive X moves right, positive Y moves down.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="offset-x">X Offset</Label>
+              <Input
+                id="offset-x"
+                type="number"
+                value={offsetX}
+                onChange={(e) => setOffsetX(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') performOffset(); }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="offset-y">Y Offset</Label>
+              <Input
+                id="offset-y"
+                type="number"
+                value={offsetY}
+                onChange={(e) => setOffsetY(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') performOffset(); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOffsetOpen(false)}>Cancel</Button>
+            <Button
+              onClick={performOffset}
+              disabled={
+                !Number.isFinite(Number(offsetX)) ||
+                !Number.isFinite(Number(offsetY)) ||
+                (Number(offsetX) === 0 && Number(offsetY) === 0)
+              }
+            >
+              Apply
             </Button>
           </DialogFooter>
         </DialogContent>

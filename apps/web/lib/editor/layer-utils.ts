@@ -294,6 +294,28 @@ export const hasLayerAnimations = (layer: AnyLayer): boolean => {
 };
 
 /**
+ * Recursively offset the position of all layers by a fixed delta.
+ * Applies dx/dy to every layer's position, including nested children.
+ */
+export function offsetLayersRecursive(layers: AnyLayer[], dx: number, dy: number): AnyLayer[] {
+  return layers.map((layer) => {
+    const moved: AnyLayer = {
+      ...layer,
+      position: {
+        x: (layer.position?.x ?? 0) + dx,
+        y: (layer.position?.y ?? 0) + dy,
+      },
+    };
+
+    if (layer.children?.length) {
+      (moved as AnyLayer & { children: AnyLayer[] }).children = offsetLayersRecursive(layer.children, dx, dy);
+    }
+
+    return moved;
+  });
+}
+
+/**
  * Recursively scale all layers by a given factor.
  * Scales position, size, and fontSize (for text layers) proportionally.
  */
