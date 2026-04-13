@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AnyLayer, ShapeLayer, Size, TransformLayer, Vec2 } from '@/lib/ca/types';
+import { AnyLayer, EmitterLayer, ShapeLayer, Size, TransformLayer, Vec2 } from '@/lib/ca/types';
 import { LayerContextMenu } from '../../layer-context-menu';
 import { EmitterCanvas } from '../../emitter/EmitterCanvas';
 import { blendModes } from '@/lib/blending';
@@ -269,7 +269,7 @@ export function LayerRenderer({
           <GradientRenderer layer={layer} animatedColors={animationOverrides['colors']} />
         )}
         {layer.type === "emitter" && (
-          <EmitterCanvas layer={layer} useYUp={nextUseYUp} />
+          <EmitterCanvas layer={initialLayer as EmitterLayer} useYUp={nextUseYUp} />
         )}
         {layer.type !== "replicator" && layer.type !== "video" && renderChildren(layer, nextUseYUp)}
         {layer.type === "replicator" && (
