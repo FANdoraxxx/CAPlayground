@@ -168,11 +168,12 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
   const performResize = async () => {
     const newW = Math.round(Number(resizeWidth));
     const newH = Math.round(Number(resizeHeight));
-    if (!newW || !newH || newW <= 0 || newH <= 0) return;
+    if (!Number.isFinite(newW) || !Number.isFinite(newH) || newW <= 0 || newH <= 0) return;
 
     // Update storage
     const proj = await getProject(projectId);
-    if (proj) await updateProject({ ...proj, width: newW, height: newH });
+    if (!proj) return;
+    await updateProject({ ...proj, width: newW, height: newH });
 
     setDoc((prev) => {
       if (!prev) return prev;

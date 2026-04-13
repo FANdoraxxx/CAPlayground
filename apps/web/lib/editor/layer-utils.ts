@@ -298,6 +298,7 @@ export const hasLayerAnimations = (layer: AnyLayer): boolean => {
  * Scales position, size, and fontSize (for text layers) proportionally.
  */
 export function scaleLayersRecursive(layers: AnyLayer[], scaleX: number, scaleY: number): AnyLayer[] {
+  const uniformScale = Math.min(scaleX, scaleY);
   return layers.map((layer) => {
     const scaled: AnyLayer = {
       ...layer,
@@ -311,27 +312,20 @@ export function scaleLayersRecursive(layers: AnyLayer[], scaleX: number, scaleY:
       },
     };
 
-    // Scale fontSize for text layers
     if (scaled.type === 'text' && scaled.fontSize) {
-      const uniformScale = Math.min(scaleX, scaleY);
       (scaled as TextLayer).fontSize = scaled.fontSize * uniformScale;
     }
 
-    // Scale borderWidth if present
     if (scaled.borderWidth) {
-      const uniformScale = Math.min(scaleX, scaleY);
       scaled.borderWidth = scaled.borderWidth * uniformScale;
     }
 
-    // Scale cornerRadius if present
     if (scaled.cornerRadius) {
-      const uniformScale = Math.min(scaleX, scaleY);
       scaled.cornerRadius = scaled.cornerRadius * uniformScale;
     }
 
-    // Recursively scale children
     if (layer.children?.length) {
-      (scaled as any).children = scaleLayersRecursive(layer.children, scaleX, scaleY);
+      (scaled as AnyLayer & { children: AnyLayer[] }).children = scaleLayersRecursive(layer.children, scaleX, scaleY);
     }
 
     return scaled;
