@@ -222,8 +222,7 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
   const performOffset = () => {
     const dx = Number(offsetX);
     const dy = Number(offsetY);
-    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
-    if (dx === 0 && dy === 0) { setOffsetOpen(false); return; }
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
 
     setDoc((prev) => {
       if (!prev) return prev;
