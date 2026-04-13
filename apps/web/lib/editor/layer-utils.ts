@@ -293,6 +293,53 @@ export const hasLayerAnimations = (layer: AnyLayer): boolean => {
   return (layer.children ?? []).some((child) => hasLayerAnimations(child));
 };
 
+type StateOverridesMap = Record<string, Array<{ targetId: string; keyPath: string; value: string | number }>>;
+
+/**
+ * Scale all position.x / position.y entries inside a stateOverrides map.
+ * Used when resizing a canvas with "scale all layers" enabled, so that per-state
+ * position overrides (Locked, Unlock, Sleep, …) stay consistent with the scaled
+ * base-layer positions.
+ */
+export function scaleStateOverridesPosition(
+  stateOverrides: StateOverridesMap | undefined,
+  scaleX: number,
+  scaleY: number,
+): StateOverridesMap {
+  if (!stateOverrides) return {};
+  const result: StateOverridesMap = {};
+  for (const [state, overrides] of Object.entries(stateOverrides)) {
+    result[state] = overrides.map((ov) => {
+      if (ov.keyPath === 'position.x') return { ...ov, value: Number(ov.value) * scaleX };
+      if (ov.keyPath === 'position.y') return { ...ov, value: Number(ov.value) * scaleY };
+      return ov;
+    });
+  }
+  return result;
+}
+
+/**
+ * Add a fixed delta to all position.x / position.y entries inside a stateOverrides map.
+ * Used when resizing a canvas without scaling, to keep every state's content centred on
+ * the new canvas (offset = (newW - oldW) / 2, (newH - oldH) / 2).
+ */
+export function offsetStateOverridesPosition(
+  stateOverrides: StateOverridesMap | undefined,
+  dx: number,
+  dy: number,
+): StateOverridesMap {
+  if (!stateOverrides) return {};
+  const result: StateOverridesMap = {};
+  for (const [state, overrides] of Object.entries(stateOverrides)) {
+    result[state] = overrides.map((ov) => {
+      if (ov.keyPath === 'position.x') return { ...ov, value: Number(ov.value) + dx };
+      if (ov.keyPath === 'position.y') return { ...ov, value: Number(ov.value) + dy };
+      return ov;
+    });
+  }
+  return result;
+}
+
 /**
  * Recursively offset the position of all layers by a fixed delta.
  * Applies dx/dy to every layer's position, including nested children.

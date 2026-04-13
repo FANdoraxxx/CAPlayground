@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { getProject, updateProject, deleteProject, isUsingOPFS } from "@/lib/storage";
 import { SettingsPanel } from "./settings-panel";
 import { ExportDialog } from "./ExportDialog";
-import { scaleLayersRecursive, offsetLayersRecursive } from "@/lib/editor/layer-utils";
+import { scaleLayersRecursive, offsetLayersRecursive, scaleStateOverridesPosition, offsetStateOverridesPosition } from "@/lib/editor/layer-utils";
 import { Checkbox } from "@/components/ui/checkbox";
 
 
@@ -184,21 +184,48 @@ export function MenuBar({ projectId, showLeft = true, showRight = true, toggleLe
       const oldH = prev.meta.height || 844;
       const scaleX = newW / oldW;
       const scaleY = newH / oldH;
+      // Half-dimension delta used to keep the canvas center point stable when not scaling.
+      const cx = (newW - oldW) / 2;
+      const cy = (newH - oldH) / 2;
 
       let nextDocs = prev.docs;
       if (scaleAllLayers) {
+        // Scale base-layer positions/sizes AND per-state position overrides.
         nextDocs = {
           background: {
             ...prev.docs.background,
             layers: scaleLayersRecursive(prev.docs.background.layers, scaleX, scaleY),
+            stateOverrides: scaleStateOverridesPosition(prev.docs.background.stateOverrides, scaleX, scaleY),
           },
           floating: {
             ...prev.docs.floating,
             layers: scaleLayersRecursive(prev.docs.floating.layers, scaleX, scaleY),
+            stateOverrides: scaleStateOverridesPosition(prev.docs.floating.stateOverrides, scaleX, scaleY),
           },
           wallpaper: {
             ...prev.docs.wallpaper,
             layers: scaleLayersRecursive(prev.docs.wallpaper.layers, scaleX, scaleY),
+            stateOverrides: scaleStateOverridesPosition(prev.docs.wallpaper.stateOverrides, scaleX, scaleY),
+          },
+        };
+      } else if (cx !== 0 || cy !== 0) {
+        // No scaling: shift every layer and per-state override by half the size delta
+        // so that the canvas center stays visually fixed across all states.
+        nextDocs = {
+          background: {
+            ...prev.docs.background,
+            layers: offsetLayersRecursive(prev.docs.background.layers, cx, cy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.background.stateOverrides, cx, cy),
+          },
+          floating: {
+            ...prev.docs.floating,
+            layers: offsetLayersRecursive(prev.docs.floating.layers, cx, cy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.floating.stateOverrides, cx, cy),
+          },
+          wallpaper: {
+            ...prev.docs.wallpaper,
+            layers: offsetLayersRecursive(prev.docs.wallpaper.layers, cx, cy),
+            stateOverrides: offsetStateOverridesPosition(prev.docs.wallpaper.stateOverrides, cx, cy),
           },
         };
       }
